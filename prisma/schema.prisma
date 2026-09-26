@@ -1,0 +1,243 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  CUSTOMER
+  AGENT
+  OWNER
+  ADMIN
+}
+
+enum ListingTier {
+  BASIC
+  ADVANCED
+  PREMIUM
+}
+
+enum ListingPurpose {
+  BUY
+  RENT
+}
+
+enum ListingStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum MediaType {
+  PHOTO
+  VIDEO
+  PANORAMA_360
+  MODEL_3D
+  FLOOR_PLAN
+}
+
+enum MediaStatus {
+  UPLOADED
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  VIEWING_REQUESTED
+  CLOSED
+}
+
+enum JobType {
+  VIDEO_TRANSCODE
+  IMAGE_OPTIMIZE
+  THUMBNAIL
+  MODEL_3D_VALIDATE
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  DONE
+  FAILED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  phone        String?
+  role         Role      @default(CUSTOMER)
+  createdAt    DateTime  @default(now())
+
+  listings     Listing[]
+  saved        SavedProperty[]
+  buyerLeads   Lead[]    @relation("BuyerLeads")
+  agentLeads   Lead[]    @relation("AgentLeads")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Listing
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Listing {
+  id          String         @id @default(uuid())
+  createdBy   User           @relation(fields: [createdById], references: [id])
+  createdById String
+
+  name        String
+  price       Float
+  address     String
+  lat         Float          @default(11.5564)
+  lng         Float          @default(104.9282)
+
+  beds        Int
+  baths       Float
+  area        Float
+
+  tier        ListingTier    @default(BASIC)
+  purpose     ListingPurpose @default(BUY)
+  isProject   Boolean        @default(false)
+  status      ListingStatus  @default(PUBLISHED)
+
+  description String         @db.Text
+  broker      String?
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  media       PropertyMedia[]
+  amenities   PropertyAmenity[]
+  floors      PropertyFloor[]
+  units       PropertyUnit[]
+  saved       SavedProperty[]
+  leads       Lead[]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Property Media (normalized — replaces JSON columns)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PropertyMedia {
+  id           String      @id @default(uuid())
+  listing      Listing     @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listingId    String
+
+  type         MediaType
+  storageKey   String      // path on disk or S3 key
+  url          String      // public-facing URL
+  thumbnailUrl String?
+  mimeType     String      @default("image/jpeg")
+  fileSize     Int         @default(0)
+  status       MediaStatus @default(READY)
+  sortOrder    Int         @default(0)
+  metadata     Json?       // duration, dimensions, glb info, etc.
+
+  createdAt    DateTime    @default(now())
+  jobs         MediaJob[]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Property Sub-models
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PropertyAmenity {
+  id        String  @id @default(uuid())
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listingId String
+  label     String
+}
+
+model PropertyFloor {
+  id        String  @id @default(uuid())
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listingId String
+  level     Int
+  units     PropertyUnit[]
+}
+
+model PropertyUnit {
+  id        String        @id @default(uuid())
+  listing   Listing       @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listingId String
+  floor     PropertyFloor @relation(fields: [floorId], references: [id])
+  floorId   String
+  number    String
+  price     Float
+  beds      Int
+  baths     Float
+  area      Float
+  videoUrl  String?
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lead (replaces Inquiry — with status workflow)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Lead {
+  id        String     @id @default(uuid())
+  listing   Listing    @relation(fields: [listingId], references: [id])
+  listingId String
+  buyer     User       @relation("BuyerLeads", fields: [buyerId], references: [id])
+  buyerId   String
+  agent     User?      @relation("AgentLeads", fields: [agentId], references: [id])
+  agentId   String?
+
+  message   String     @db.Text
+  status    LeadStatus @default(NEW)
+  source    String     @default("inquiry_form")
+
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Saved Property
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SavedProperty {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  listing   Listing  @relation(fields: [listingId], references: [id])
+  listingId String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, listingId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Media Job Queue (replaces MediaWorkerLog)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model MediaJob {
+  id         String    @id @default(uuid())
+  media      PropertyMedia @relation(fields: [mediaId], references: [id])
+  mediaId    String
+
+  type       JobType
+  status     JobStatus @default(QUEUED)
+  progress   Int       @default(0)
+  workerNode String?
+  error      String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}

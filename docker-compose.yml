@@ -1,0 +1,18 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: estatex_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: estatex
+      POSTGRES_PASSWORD: estatex
+      POSTGRES_DB: estatex
+    ports:
+      - "5432:5432"
+    volumes:
+      - estatex_pgdata:/var/lib/postgresql/data
+
+volumes:
+  estatex_pgdata:
