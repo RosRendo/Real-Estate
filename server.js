@@ -193,6 +193,7 @@ async function createServer() {
       server: {
         middlewareMode: true,
         hmr: { port: 24688 },
+        allowedHosts: true,
       },
       appType: 'custom',
     });
