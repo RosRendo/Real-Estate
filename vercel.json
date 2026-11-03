@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://realestate.dashboardkiller.online/api/$1"
+    },
+    {
+      "source": "/uploads/(.*)",
+      "destination": "https://realestate.dashboardkiller.online/uploads/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
